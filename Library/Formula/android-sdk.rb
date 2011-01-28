@@ -1,33 +1,63 @@
 require 'formula'
 
 class AndroidSdk <Formula
-  url 'http://dl.google.com/android/android-sdk_r04-mac_86.zip'
+  url 'http://dl.google.com/android/android-sdk_r09-mac_x86.zip'
   homepage 'http://developer.android.com/index.html'
-  md5 'b08512765aa9b0369bb9b8fecdf763e3'
-  version 'r4'
+  md5 'ef3102fdbbbbd9bf4d9b572624aa9dc1'
+  version 'r9'
 
-  skip_clean 'add-ons'
-  skip_clean 'platforms'
-  skip_clean 'temp'
+  def self.var_dirs
+    %w[platforms samples temp add-ons ]
+    # TODO docs, google-market_licensing and platform-tools
+    # See the long comment below for the associated problems
+  end
 
-  aka :android
+  skip_clean var_dirs
 
   def install
-    mkdir %w[temp docs] << bin
+    mkdir bin
 
-    mv 'SDK Readme.txt', 'README'
-    prefix.install Dir['*']
+    mv 'SDK Readme.txt', prefix/'README'
+    mv 'tools', prefix
 
-    %w[adb android apkbuilder ddms dmtracedump draw9patch emulator 
+    %w[android apkbuilder ddms dmtracedump draw9patch emulator
            hierarchyviewer hprof-conv layoutopt mksdcard traceview
            zipalign].each do |tool|
-      (bin+tool).make_link(prefix+'tools'+tool)
+      (bin/tool).make_link(prefix/'tools'/tool)
     end
+
+    # this is data that should be preserved across upgrades, but the Android
+    # SDK isn't too smart, so we still have to symlink it back into its tree.
+    AndroidSdk.var_dirs.each do |d|
+      dst = prefix/d
+      src = var/'lib/android-sdk'/d
+      src.mkpath unless src.directory?
+      dst.make_relative_symlink src
+    end
+
+    (bin/:adb).write <<-EOS.undent
+      #!/bin/sh
+      ADB="#{prefix}/platform-tools/adb"
+      test -f "$ADB" && exec "$ADB" $@
+      echo Use the \\`android\\' tool to install adb.
+      EOS
   end
 
-  def caveats; "\
-We agreed to the Android SDK License Agreement for you by downloading the SDK.
-If this is unacceptable you should uninstall.
-You can read the license at: http://developer.android.com/sdk/terms.html"
+  def caveats; <<-EOS.undent
+    Now run the `android' tool to install the actual SDK stuff.
+    You will have to install the platform-tools EVERY time this formula updates.
+    If you want to try and fix this then see the comment in this formula.
+    EOS
   end
+
+  # The `android' tool insists on deleting /usr/local/Cellar/android-sdl/rx/platform-tools
+  # and then installing the new one. So it is impossible for us to redirect
+  # the SDK location to var so that the platform-tools don't have to be
+  # freshly installed EVERY FUCKING time the base SDK updates.
+  # My disgust at Google's ineptitude here knows NO bounds. I can only LOL.
+  # And I do LOL. A lot. In Google's general direction. I can't stop LOLing.
+  # In fact, I may have LOLd myself into insanity.
+
+  # Ideas: make android a script that calls the actual android tool, but after
+  # that tool exits it repairs the directory locations?
 end
